@@ -1,0 +1,56 @@
+# Python environment
+venv/
+env/
+.venv
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Audio files (usually large)
+*.wav
+*.mp3
+*.flac
+*.m4a
+
+# Application generated files
+subs_en.txt
+subs_*.txt
+history_*.txt
+history_fr.txt
+history_zh.txt
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test/temp files
+*.tmp
+*.temp
+temp/

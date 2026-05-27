@@ -1,0 +1,51 @@
+# Example configuration for StreamTranslation
+# Copy this to config.yaml in the same directory and edit to your preferences
+
+# Audio capture settings
+sample_rate: 16000              # Hz (must be 16000 for OpenAI Whisper)
+chunk_sec: 1                    # seconds per VAD cycle
+input_device_index: 1           # Run: python -c "import sounddevice as sd; print(sd.query_devices())"
+
+# Voice Activity Detection
+vad_energy_threshold: 0.024     # RMS energy threshold for speech detection
+                                # Increase if picking up background noise
+                                # Decrease if missing quiet speech
+end_utterance_silence_sec: 2    # seconds of silence to trigger transcription
+
+# Transcription model
+openai_model: gpt-4o-transcribe # OpenAI model for Whisper
+transcription_language: fr      # Source language: 'fr' (French), 'zh' (Chinese), 'en' (English)
+
+# Translation
+deepl_target_lang: EN-US        # Target language code
+                                # EN-US, EN-GB (English)
+                                # Supported: DE, FR, IT, ES, NL, PL, PT, RU, JA, ZH (Chinese)
+
+# Subtitle display
+clear_after_sec: 2.0            # Base duration subtitle stays on screen (seconds)
+max_utterance_samples: 220000   # Auto-flush if utterance exceeds ~13.75 seconds
+
+# Text processing
+min_chars: 4                     # Minimum length to display
+banned_phrases:                 # Words to remove from transcription
+  - "hum"
+  - "ah"
+  - "oh"
+  - "eh"
+
+# Files
+history_file: history_fr.txt    # Where to save transcript history
+glossary_file: glossary.json    # Term corrections (auto-created if missing)
+subs_en_file: subs_en.txt       # OBS reads this file for subtitles
+
+# For French streamers
+transcription_prompt_fr: |
+  You are transcribing French speedrunner speech from a live twitch stream.
+  Context: the streamer talks about speedrunning elden ring, and speedrun strategies in general.
+  Remove filler words and swear words. If you have trouble understanding, leave blank.
+
+# For Chinese streamers (add this too)
+transcription_prompt_zh: |
+  You are transcribing Chinese gamer speech from a live twitch stream.
+  Context: the streamer talks about gaming, speedrunning, and strategy.
+  Remove filler words. If you have trouble understanding, leave blank.
