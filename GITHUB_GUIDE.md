@@ -4,7 +4,7 @@ Chinese / English / Japanese
 
 ---
 
-## For Your Chinese Friends
+## For Chinese streamers
 
 ### 第一步：获取API密钥 (Step 1: Get API Keys)
 
@@ -268,9 +268,5 @@ StreamTranslation/
 - Code comments: Explain complex logic
 
 ---
-
-Happy streaming!
-
-Happy streaming!
 
 Happy streaming!
