@@ -1,40 +1,40 @@
 # StreamTranslation Setup Script for Windows
 # Run: .\setup.ps1
 
-Write-Host "🎤 StreamTranslation Setup" -ForegroundColor Cyan
+Write-Host "StreamTranslation Setup" -ForegroundColor Cyan
 Write-Host "=========================" -ForegroundColor Cyan
 Write-Host ""
 
 # Check Python version
-Write-Host "✓ Checking Python installation..." -ForegroundColor Green
+Write-Host "Checking Python installation..." -ForegroundColor Green
 python --version
 if ($LASTEXITCODE -ne 0) {
-	Write-Host "✗ Python not found! Please install Python 3.10+ from https://www.python.org/downloads/" -ForegroundColor Red
+	Write-Host "Python not found! Please install Python 3.10+ from https://www.python.org/downloads/" -ForegroundColor Red
 	exit 1
 }
 
 # Create virtual environment
 Write-Host ""
-Write-Host "✓ Creating virtual environment..." -ForegroundColor Green
+Write-Host "Creating virtual environment..." -ForegroundColor Green
 python -m venv venv
 if ($LASTEXITCODE -ne 0) {
-	Write-Host "✗ Failed to create virtual environment" -ForegroundColor Red
+	Write-Host "Failed to create virtual environment" -ForegroundColor Red
 	exit 1
 }
 
 # Activate virtual environment
-Write-Host "✓ Activating virtual environment..." -ForegroundColor Green
+Write-Host "Activating virtual environment..." -ForegroundColor Green
 & ".\venv\Scripts\Activate.ps1"
 
 # Upgrade pip
-Write-Host "✓ Upgrading pip..." -ForegroundColor Green
+Write-Host "Upgrading pip..." -ForegroundColor Green
 python -m pip install --upgrade pip
 
 # Install requirements
-Write-Host "✓ Installing dependencies..." -ForegroundColor Green
+Write-Host "Installing dependencies..." -ForegroundColor Green
 pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) {
-	Write-Host "✗ Failed to install dependencies" -ForegroundColor Red
+	Write-Host "Failed to install dependencies" -ForegroundColor Red
 	exit 1
 }
 
@@ -49,9 +49,9 @@ if (-not (Test-Path ".env")) {
 
 Write-Host ""
 Write-Host "=========================" -ForegroundColor Cyan
-Write-Host "✓ Setup Complete!" -ForegroundColor Green
+Write-Host "Setup Complete!" -ForegroundColor Green
 Write-Host ""
-Write-Host "📋 Next steps:" -ForegroundColor Cyan
+Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Edit .env with your API keys:" -ForegroundColor Gray
 Write-Host "     notepad .env" -ForegroundColor Yellow
 Write-Host ""
@@ -71,4 +71,4 @@ Write-Host ""
 Write-Host "  5. Run the script:" -ForegroundColor Gray
 Write-Host "     python live_subs.py" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "📖 For detailed instructions, see README.md" -ForegroundColor Cyan
+Write-Host "For detailed instructions, see README.md" -ForegroundColor Cyan

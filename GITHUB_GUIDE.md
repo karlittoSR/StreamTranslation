@@ -1,10 +1,10 @@
-# 🌐 GitHub 克隆和运行指南 / GitHub Clone & Run Guide
+# GitHub Clone & Run Guide
 
-*中文 / English / 日本語*
+Chinese / English / Japanese
 
 ---
 
-## 📥 对于你的中国朋友 (For Your Chinese Friends)
+## For Your Chinese Friends
 
 ### 第一步：获取API密钥 (Step 1: Get API Keys)
 
@@ -137,7 +137,7 @@ python live_subs.py
 
 ---
 
-## 📖 详细文档 (Detailed Documentation)
+## Detailed Documentation
 
 - **快速入门 (Quick Start):** `QUICKSTART.md`
 - **完整指南 (Full Guide):** `README.md`
@@ -146,7 +146,7 @@ python live_subs.py
 
 ---
 
-## 🛠️ 常见问题 (Troubleshooting)
+## Troubleshooting
 
 ### "No module named openai"
 ```powershell
@@ -176,7 +176,7 @@ python -c "import sounddevice as sd; print(sd.query_devices())"
 
 ---
 
-## 💰 成本估算 (Cost Summary)
+## Cost Summary
 
 | 服务 | 月成本 |
 |------|-------|
@@ -189,7 +189,7 @@ python -c "import sounddevice as sd; print(sd.query_devices())"
 
 ---
 
-## 🚀 每日使用 (Daily Usage)
+## Daily Usage
 
 一旦设置完成：
 
@@ -203,7 +203,7 @@ python live_subs.py
 
 ---
 
-## 📚 支持的语言 (Supported Languages)
+## Supported Languages
 
 **转录语言：**
 - `fr` - 法语 (French)
@@ -224,7 +224,7 @@ python live_subs.py
 
 ---
 
-## 🎯 下一步 (What's Next?)
+## What's Next?
 
 1. 创建 `glossary.json` 以修复常见的误译
 2. 调整 `vad_energy_threshold` 如果拾取太多背景噪音
@@ -233,7 +233,7 @@ python live_subs.py
 
 ---
 
-## ❓ 问题？(Questions?)
+## Questions?
 
 1. 查看 `README.md`
 2. 查看 `QUICKSTART.md`
@@ -242,7 +242,7 @@ python live_subs.py
 
 ---
 
-## 📝 文件结构 (File Structure)
+## File Structure
 
 ```
 StreamTranslation/
@@ -261,16 +261,16 @@ StreamTranslation/
 
 ---
 
-## 💬 社区
+## Community
 
-- GitHub Issues：报告错误和请求功能
-- GitHub Discussions：提问和一般帮助
-- 代码注释：解释复杂逻辑
+- GitHub Issues: Report bugs and request features
+- GitHub Discussions: Ask questions and general help
+- Code comments: Explain complex logic
 
 ---
 
-**祝你直播愉快！🚀**
+Happy streaming!
 
-**Happy streaming! 🎮**
+Happy streaming!
 
-**ハッピーストリーミング！📺**
+Happy streaming!

@@ -1,4 +1,4 @@
-# ⚡ Quick Start Guide
+# Quick Start Guide
 
 ## 5-Minute Setup
 
@@ -192,4 +192,4 @@ Very affordable for a professional setup!
 
 ---
 
-**Happy streaming!** 🚀
+**Happy streaming!**

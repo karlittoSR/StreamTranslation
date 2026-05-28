@@ -1,6 +1,6 @@
 # Contributing to StreamTranslation
 
-Thank you for your interest in contributing! 🎉
+Thank you for your interest in contributing!
 
 ## How to Contribute
 
@@ -98,13 +98,13 @@ pip install -r requirements.txt
 
 ## Areas for Contribution
 
-- 🌍 **Language support** - add more languages
-- 🎯 **VAD improvement** - better speech detection
-- 🎨 **UI/Dashboard** - web interface
-- 📊 **Performance** - optimize audio processing
-- 📖 **Documentation** - translate docs, clarify guides
-- 🐛 **Bug fixes** - any reported issues
-- ✅ **Tests** - improve test coverage
+- Language support - add more languages
+- VAD improvement - better speech detection
+- UI/Dashboard - web interface
+- Performance - optimize audio processing
+- Documentation - translate docs, clarify guides
+- Bug fixes - any reported issues
+- Tests - improve test coverage
 
 ## Communication
 
@@ -145,4 +145,4 @@ git push origin feature/amazing-feature
 
 Open an issue or start a discussion. We're here to help!
 
-**Thank you for contributing! 🚀**
+Thank you for contributing!

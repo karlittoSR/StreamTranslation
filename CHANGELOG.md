@@ -4,7 +4,7 @@ All notable changes to StreamTranslation are documented here.
 
 ## [1.0.0] - 2024-01-15
 
-### Initial Release ✨
+### Initial Release
 
 **Features:**
 - Real-time speech transcription via OpenAI Whisper

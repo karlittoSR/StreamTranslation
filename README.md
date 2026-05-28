@@ -1,25 +1,25 @@
-# 🎤 StreamTranslation
+# StreamTranslation
 
 Real-time speech transcription and translation for live streaming (OBS). Convert live speech (French, Chinese, etc.) to English subtitles in real-time.
 
-## ✨ Features
+## Features
 
-- 🗣️ Real-time transcription using OpenAI Whisper (French, Chinese, English, etc.)
-- 🌍 Multi-language translation via DeepL with Azure fallback
-- 📺 OBS integration - reads/writes simple text file (no plugins needed)
-- 📝 Transcript history with auto-cleanup
-- 🔧 Fully customizable - glossary, banned phrases, VAD threshold
-- 🔄 Graceful fallback - continues if DeepL quota exceeded
-- 🚀 Fast & lightweight - runs on Windows/Mac/Linux
+- Real-time transcription using OpenAI Whisper (French, Chinese, English, etc.)
+- Multi-language translation via DeepL with Azure fallback
+- OBS integration - reads/writes simple text file (no plugins needed)
+- Transcript history with auto-cleanup
+- Fully customizable - glossary, banned phrases, VAD threshold
+- Graceful fallback - continues if DeepL quota exceeded
+- Fast & lightweight - runs on Windows/Mac/Linux
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.10+
 - Working microphone
 - Internet connection
 - Three API keys (OpenAI, DeepL, optionally Azure)
 
-## 🔑 Required API Keys
+## Required API Keys
 
 ### OpenAI (Whisper Transcription)
 1. Go to https://platform.openai.com/api-keys
@@ -38,7 +38,7 @@ Real-time speech transcription and translation for live streaming (OBS). Convert
 3. Copy API key
 4. Cost: ~\/month if needed
 
-## 🚀 Installation (Step-by-Step)
+## Installation (Step-by-Step)
 
 ### Step 1: Clone Repository
 \\\powershell
@@ -145,7 +145,7 @@ Edit \Config.banned_phrases\ to add filler words:
 banned_phrases: list = ["hum", "ah", "umm", "like", "you know"]
 \\\
 
-## 🛠️ Configuration
+## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -156,13 +156,13 @@ banned_phrases: list = ["hum", "ah", "umm", "like", "you know"]
 | \clear_after_sec\ | 2 | Subtitle display duration |
 | \deepl_target_lang\ | EN-US | Target language |
 
-## 🌐 Language Support
+## Language Support
 
 **Transcription:** French (fr), Chinese (zh), English (en), Spanish (es), German (de), Japanese (ja), and more
 
 **Translation:** EN-US, EN-GB, DE, FR, ZH, ES, JA, PT, RU, NL, PL, and more
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### No audio detected
 - Run: \python -c "import sounddevice as sd; print(sd.query_devices())"\
@@ -187,7 +187,7 @@ banned_phrases: list = ["hum", "ah", "umm", "like", "you know"]
 - Activate venv: \.\venv\Scripts\Activate.ps1\
 - Reinstall: \pip install -r requirements.txt --upgrade\
 
-## 📊 Costs
+## Costs
 
 | Service | Monthly | Notes |
 |---------|---------|-------|
@@ -196,7 +196,7 @@ banned_phrases: list = ["hum", "ah", "umm", "like", "you know"]
 | Azure | \ | Only if needed |
 | **Total** | **~\** | Very affordable! |
 
-## 📝 File Structure
+## File Structure
 
 \\\
 StreamTranslation/
@@ -209,12 +209,12 @@ StreamTranslation/
 └── glossary.json         # (Auto) Term corrections
 \\\
 
-## 📜 License
+## License
 
 MIT - Free to use and modify
 
-## 🙏 Credits
+## Credits
 
 Built for international streamers. Powered by OpenAI Whisper, DeepL, and Azure Translator.
 
-**Happy streaming! 🚀**
+Happy streaming!
