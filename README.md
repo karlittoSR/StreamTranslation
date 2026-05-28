@@ -216,5 +216,6 @@ MIT - Free to use and modify
 ## Credits
 
 Built for international streamers. Powered by OpenAI Whisper, DeepL, and Azure Translator.
+Huge thanks to Forsa for the inspiration and technical details.
 
 Happy streaming!
