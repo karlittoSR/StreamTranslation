@@ -1,5 +1,5 @@
 @echo off
-cd /d F:\Speedrun\Automation\repo\StreamTranslation
+cd /d "%~dp0"
 call .venv\Scripts\activate
 python live_subs.py
 pause
