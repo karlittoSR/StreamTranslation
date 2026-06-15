@@ -13,6 +13,8 @@ from typing import Optional
 import tempfile
 import wave
 import uuid
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from functools import partial
 import numpy as np
 import sounddevice as sd
 import requests
@@ -30,31 +32,35 @@ logger = logging.getLogger(__name__)
 class Config:
     """Configuration for live subtitle system."""
     sample_rate: int = 16000          # Audio sample rate in Hz (16 kHz is optimal for Whisper)
-    chunk_sec: float = 1              # Duration of each audio chunk processed per VAD cycle (seconds)
+    chunk_sec: float = 0.4            # Duration of each audio chunk processed per VAD cycle (seconds); also the silence-detection resolution
     openai_model: str = "gpt-4o-transcribe"  # OpenAI model used for speech-to-text transcription
-    vad_energy_threshold: float = 0.024      # RMS energy level above which audio is considered speech
+    vad_energy_threshold: float = 0.026      # RMS energy level above which audio is considered speech
     input_device_index: int = 1       # Sounddevice input device index (use sd.query_devices() to list)
-    end_utterance_silence_sec: float = 2     # Seconds of silence required to trigger end-of-utterance
-    min_chars: int = 4                # Minimum character count for a transcription to be displayed
-    clear_after_sec: float = 2        # Base seconds a subtitle stays on screen before being cleared
+    end_utterance_silence_sec: float = 1.7     # Seconds of silence required to trigger end-of-utterance (effective ~1.6s at chunk_sec=0.4)
+    min_chars: int = 2                # Minimum character count for a transcription to be displayed (2 keeps short reactions like "Non"/"GG")
+    clear_after_sec: float = 3        # Base seconds a subtitle stays on screen before being cleared
     max_utterance_samples: int = 220000      # Max samples buffered before a mid-speech flush is forced (~13.75s)
     history_file: str = "history_fr.txt"     # File where French transcriptions are appended with timestamps
     glossary_file: str = "glossary.json"     # JSON file mapping wrong terms to correct spellings/names
     subs_en_file: str = "subs_en.txt"        # Output file read by OBS as a subtitle text source
     deepl_target_lang: str = "EN-US"         # DeepL target language code for translation
     deepl_url: str = "https://api-free.deepl.com/v2/translate"  # DeepL free-tier REST API endpoint
-    banned_phrases: list = None        # List of words/phrases to strip from transcriptions (e.g. filler words)
+
+    browser_host: str = "127.0.0.1"          # Host the local subtitle HTTP server binds to (loopback only)
+    browser_port: int = 8765                 # Port the local subtitle HTTP server listens on
+    browser_html_file: str = "subtitles.html"  # HTML page served to the OBS Browser Source
+    subtitle_max_width_px: int = 1100        # Max width of the subtitle box in pixels (wrapping kicks in beyond this)
+    subtitle_color: str = "#c3f9f6"          # Subtitle text colour (matches the stream overlay's cyan accent)
+    subtitle_bottom_margin_px: int = 90      # Gap between the subtitle box and the bottom of the screen
+    subtitle_bg_opacity: float = 0.35        # Box background opacity: 0 = invisible, 1 = solid black (lower = lighter)
     
     transcription_prompt: str = (
-        "You are transcribing French speedrunner speech from a live twitch stream. "
-        "Context: the streamer talks about speedrunning elden ring, and speedrun strategies in general. "
-        "Remove filler words and swear words. If you have trouble understanding the words, just don't transcribe it and leave blank."
+        "Diffusion d'un speedrun d'Elden Ring en français. Transcrivez les paroles mot pour mot, sans mots de remplissage. "
+        "Si un passage est inintelligible, laissez-le vide plutôt que de deviner. "
+        "Vocabulaire probable : Caelid, Leyndell, Sellia, Morgott, Maliketh, Radahn, Malenia, "
+        "Margit, Mohg, Rennala, Death's Poker, quitout, glitchless, weapon art R1, kukri, "
+        "timeloss, skip, splits, PB, RNG, any%, RL1, R1, R2."
     )
-    
-    def __post_init__(self):
-        # Set default banned phrases if none were provided at construction time
-        if self.banned_phrases is None:
-            self.banned_phrases = ["pute", "hum.", "hum", "ah", "oh", "eh"]
     
     def validate(self) -> None:
         """Validate all numeric config values and warn about missing optional files."""
@@ -189,31 +195,28 @@ class TextProcessor:
         self.config = config
         self.glossary = glossary
     
-    def sanitize(self, text: str) -> str:
-        """Strip banned phrases, apply glossary corrections, and normalise whitespace."""
+    def sanitize(self, text: str, apply_glossary: bool = True) -> str:
+        """Optionally apply glossary corrections and normalise whitespace.
+
+        apply_glossary should be False for already-translated English text: the
+        glossary maps French mishearings (e.g. "force" -> "Forsa") and would
+        corrupt legitimate English words.
+        """
         if not text:
             return ""
-        
+
         out = text
-        
-        # Loop over every banned phrase and erase it from the text (case-insensitive)
-        for phrase in self.config.banned_phrases:
-            out = re.sub(
-                re.escape(phrase), 
-                "", 
-                out, 
-                flags=re.IGNORECASE
-            )
-        
-        # Loop over every glossary entry and replace misspelled terms with the correct form
-        for wrong_term, correct_term in self.glossary.items():
-            out = re.sub(
-                r"\b" + re.escape(wrong_term) + r"\b",
-                correct_term,
-                out,
-                flags=re.IGNORECASE
-            )
-        
+
+        # Replace misspelled terms with the correct form — French side only
+        if apply_glossary:
+            for wrong_term, correct_term in self.glossary.items():
+                out = re.sub(
+                    r"\b" + re.escape(wrong_term) + r"\b",
+                    correct_term,
+                    out,
+                    flags=re.IGNORECASE
+                )
+
         # Trim leading/trailing whitespace, collapse internal spaces, and remove leading punctuation
         out = out.strip()
         out = re.sub(r"\s+", " ", out)                       # collapse multiple spaces into one
@@ -298,7 +301,10 @@ class TranslationHandler:
         self.azure_location = "westeurope"                                    # Azure region where the resource is deployed
         self.azure_endpoint = "https://api.cognitive.microsofttranslator.com" # Azure Translator REST base URL
         self.deepl_exhausted = False  # Flipped to True when DeepL returns HTTP 456 (monthly quota reached)
-        
+        # Reuse one HTTP connection across translations so we don't pay a fresh
+        # TLS handshake (~100-300ms) on every line. Both DeepL and Azure benefit.
+        self.session = requests.Session()
+
         # Warn at startup if keys are missing so the user knows translation is degraded
         if not self.deepl_auth_key:
             logger.warning("DEEPL_AUTH_KEY not set. Translation disabled.")
@@ -326,10 +332,10 @@ class TranslationHandler:
         }
         
         try:
-            response = requests.post(
-                self.config.deepl_url, 
-                headers=headers, 
-                data=data, 
+            response = self.session.post(
+                self.config.deepl_url,
+                headers=headers,
+                data=data,
                 timeout=8
             )
             
@@ -388,7 +394,7 @@ class TranslationHandler:
         body = [{'text': text}]
         
         try:
-            response = requests.post(
+            response = self.session.post(
                 constructed_url,
                 params=params,
                 headers=headers,
@@ -514,9 +520,149 @@ def transcribe_audio(client: OpenAI, wav_path: str, config: Config) -> str:
         return ""
 
 
+def write_browser_html(config: Config) -> None:
+    """Generate the HTML page that the OBS Browser Source polls for subtitles.
+
+    The page fetches subs_en_file every 150 ms and shows a semi-transparent box
+    only when the file is non-empty, so the background disappears with the text.
+    """
+    html = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {{
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+  }}
+
+  body {{
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    font-family: 'Funnel Sans', Arial, Helvetica, sans-serif;
+  }}
+
+  #subtitle {{
+    display: none;
+    max-width: {config.subtitle_max_width_px}px;
+    margin-bottom: {config.subtitle_bottom_margin_px}px;
+    padding: 10px 18px;
+    border-radius: 8px;
+
+    background: rgba(0, 0, 0, {config.subtitle_bg_opacity});
+    color: {config.subtitle_color};
+
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+    box-sizing: border-box;
+  }}
+</style>
+</head>
+<body>
+  <div id="subtitle"></div>
+
+<script>
+const subtitle = document.getElementById("subtitle");
+let lastText = "";
+
+async function updateSubtitle() {{
+  try {{
+    const response = await fetch("{config.subs_en_file}?t=" + Date.now(), {{
+      cache: "no-store"
+    }});
+
+    const text = (await response.text()).trim();
+
+    if (text !== lastText) {{
+      lastText = text;
+      subtitle.textContent = text;
+
+      if (text.length > 0) {{
+        subtitle.style.display = "block";
+      }} else {{
+        subtitle.style.display = "none";
+      }}
+    }}
+  }} catch (e) {{
+    subtitle.style.display = "none";
+  }}
+}}
+
+setInterval(updateSubtitle, 150);
+updateSubtitle();
+</script>
+</body>
+</html>
+"""
+    try:
+        with open(config.browser_html_file, "w", encoding="utf-8") as f:
+            f.write(html)
+        logger.info(f"Browser subtitle page written: {config.browser_html_file}")
+    except OSError as e:
+        logger.error(f"Error writing browser HTML file: {e}")
+        raise
+
+
+class _QuietHTTPRequestHandler(SimpleHTTPRequestHandler):
+    """SimpleHTTPRequestHandler that doesn't log every request.
+
+    The OBS page polls subs_en.txt ~7x/second, so the default per-request
+    logging would flood the console. We silence it and rely on the single
+    startup line instead.
+    """
+
+    def log_message(self, format, *args):
+        pass  # suppress per-request access logging
+
+
+def start_subtitle_http_server(config: Config) -> ThreadingHTTPServer:
+    """Start a loopback HTTP server that serves the HTML page and subs_en_file to OBS.
+
+    Runs in a daemon thread so it shuts down with the process. Files are served
+    from the current working directory (where subs_en.txt and the HTML live).
+    """
+    directory = os.getcwd()
+
+    # Bind the quiet request handler to the working directory so it serves our files
+    handler = partial(_QuietHTTPRequestHandler, directory=directory)
+
+    server = ThreadingHTTPServer(
+        (config.browser_host, config.browser_port),
+        handler,
+    )
+
+    # Serve in the background so the main transcription loop is never blocked
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    logger.info(
+        f"🌐 OBS Browser Source URL: "
+        f"http://{config.browser_host}:{config.browser_port}/{config.browser_html_file}"
+    )
+
+    return server
+
+
 def main():
     """Main transcription loop."""
     config = Config()
+
+    # Stand up the local subtitle web page + server for the OBS Browser Source
+    write_browser_html(config)
+    subtitle_http_server = start_subtitle_http_server(config)
     
     # Validate configuration
     try:
@@ -592,11 +738,34 @@ def main():
             en_text = fr_text
             logger.info("Using French text as fallback")
 
-        # Sanitise the translated text and push it to OBS with the appropriate display duration
-        en_text = text_processor.sanitize(en_text)
+        # Sanitise the translated text and push it to OBS with the appropriate display duration.
+        # Skip the glossary here — it targets French mishearings and would mangle English.
+        en_text = text_processor.sanitize(en_text, apply_glossary=False)
         extra = extra_display_sec(audio_samples.size)  # bonus seconds based on utterance length
         subtitle_manager.write_subtitle(en_text, extra_sec=extra)
         logger.info(f"EN: {en_text} [display +{extra:.0f}s extra]")
+
+    # Hand finished utterances to a single background worker so the capture/VAD
+    # loop never blocks on the transcription + translation network round-trips.
+    # One worker (not a pool) keeps subtitles in the order they were spoken.
+    work_q: queue.Queue = queue.Queue()
+
+    def transcription_worker():
+        """Consume audio blocks and run the full transcribe/translate/display pipeline."""
+        while True:
+            item = work_q.get()
+            if item is None:  # sentinel: shut the worker down
+                work_q.task_done()
+                break
+            try:
+                process_utterance(item)
+            except Exception as e:
+                logger.error(f"Worker error processing utterance: {e}")
+            finally:
+                work_q.task_done()
+
+    worker_thread = threading.Thread(target=transcription_worker, daemon=True)
+    worker_thread.start()
 
     try:
         logger.info(f"🎤 Starting live subtitle transcription")
@@ -653,7 +822,7 @@ def main():
                         block = utterance_audio[:config.max_utterance_samples].copy()
                         utterance_audio = utterance_audio[config.max_utterance_samples:]  # keep the remainder
                         logger.info(f"Max utterance size reached, flushing {block.size} samples")
-                        process_utterance(block)
+                        work_q.put(block)
                 else:
                     # Silence detected — accumulate silence duration
                     silence_sec += config.chunk_sec
@@ -665,7 +834,7 @@ def main():
                     to_transcribe = utterance_audio.copy()          # copy for processing
                     utterance_audio = np.zeros((0,), dtype=np.float32)  # reset the buffer
                     silence_sec = 0.0
-                    process_utterance(to_transcribe)
+                    work_q.put(to_transcribe)
     
     except KeyboardInterrupt:
         logger.info("Shutting down...")
@@ -678,8 +847,16 @@ def main():
         logger.error(f"Unexpected error: {e}")
         raise
     finally:
+        # Signal the worker to stop and give it a moment to finish the current item
+        work_q.put(None)
+        worker_thread.join(timeout=10)
         subtitle_manager.shutdown()
         history_manager.cleanup(days_to_keep=history_retention_days)
+        # Stop the local Browser Source HTTP server if it was started
+        try:
+            subtitle_http_server.shutdown()
+        except Exception:
+            pass
         logger.info("Shutdown complete")
 
 

@@ -55,3 +55,6 @@ logs/
 *.temp
 temp/
 DISTRIBUTION.md
+
+# Personal glossary (use glossary_example.json as template)
+glossary.json
