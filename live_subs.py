@@ -37,8 +37,11 @@ class Config:
     vad_energy_threshold: float = 0.026      # RMS energy level above which audio is considered speech
     input_device_index: int = 1       # Sounddevice input device index (use sd.query_devices() to list)
     end_utterance_silence_sec: float = 1.7     # Seconds of silence required to trigger end-of-utterance (effective ~1.6s at chunk_sec=0.4)
+    end_padding_chunks: int = 1                # Sub-threshold chunk(s) kept right after speech so soft word endings aren't clipped (1 = +0.4s tail at chunk_sec=0.4)
     min_chars: int = 2                # Minimum character count for a transcription to be displayed (2 keeps short reactions like "Non"/"GG")
-    clear_after_sec: float = 3        # Base seconds a subtitle stays on screen before being cleared
+    reading_wpm: int = 230            # Assumed reader pace; display time scales with word count (60/wpm sec per word). 230 ≈ average adult silent reading
+    min_display_sec: float = 2.5      # Floor so short lines ("GG", "Non") stay readable / don't flicker
+    max_display_sec: float = 7.0      # Cap so a long line can't hog the screen or stall the FIFO queue
     max_utterance_samples: int = 220000      # Max samples buffered before a mid-speech flush is forced (~13.75s)
     history_file: str = "history_fr.txt"     # File where French transcriptions are appended with timestamps
     glossary_file: str = "glossary.json"     # JSON file mapping wrong terms to correct spellings/names
@@ -92,7 +95,7 @@ class SubtitleManager:
         self.clear_timer: Optional[threading.Timer] = None  # Active timer that will clear or advance the queue
         self.clear_token: int = 0        # Monotonically increasing token; each subtitle owns one, stale timers are ignored
         self.lock = threading.Lock()     # Protects all mutable state against races between the main thread and timer callbacks
-        # Each entry in the queue is a (text, extra_sec) tuple waiting to be displayed
+        # Each entry in the queue is a (text, display_sec) tuple waiting to be displayed
         self._queue: deque = deque()
         self._displaying: bool = False   # True while a subtitle is currently on screen
 
@@ -105,7 +108,7 @@ class SubtitleManager:
         except OSError as e:
             logger.error(f"Error clearing subs file: {e}")
 
-    def _display_now(self, text: str, extra_sec: float) -> None:
+    def _display_now(self, text: str, display_sec: float) -> None:
         """Write text to the OBS subtitle file and arm a display timer. Must be called with lock held."""
         # Overwrite the subtitle file with the new text so OBS picks it up immediately
         try:
@@ -115,8 +118,7 @@ class SubtitleManager:
         except OSError as e:
             logger.error(f"Error writing subs file: {e}")
 
-        # Total display duration = base time + bonus seconds for longer utterances
-        display_sec = self.config.clear_after_sec + extra_sec
+        # display_sec is the full, already-computed on-screen duration (reading time)
         # Bump the token so any previously armed timer is treated as stale
         self.clear_token += 1
         token = self.clear_token
@@ -142,9 +144,9 @@ class SubtitleManager:
             self.clear_timer = None
             if self._queue:
                 # Pop the next waiting subtitle and display it immediately
-                next_text, next_extra = self._queue.popleft()
+                next_text, next_display = self._queue.popleft()
                 logger.debug(f"Dequeuing next subtitle: {next_text[:50]}...")
-                self._display_now(next_text, next_extra)
+                self._display_now(next_text, next_display)
                 # _displaying stays True, new timer armed inside _display_now
             else:
                 # Nothing queued — clear the screen while still holding the
@@ -159,18 +161,18 @@ class SubtitleManager:
                 except OSError as e:
                     logger.error(f"Error clearing subs file: {e}")
 
-    def write_subtitle(self, text: str, extra_sec: float = 0.0) -> None:
+    def write_subtitle(self, text: str, display_sec: float) -> None:
         """Public entry point: display a subtitle now or enqueue it for later if screen is busy."""
         with self.lock:
             if self._displaying:
                 # A subtitle is currently on screen — add this one to the FIFO queue
-                self._queue.append((text, extra_sec))
+                self._queue.append((text, display_sec))
                 logger.debug(
                     f"Subtitle queued (queue length: {len(self._queue)}): {text[:50]}..."
                 )
             else:
                 # Screen is free — display immediately
-                self._display_now(text, extra_sec)
+                self._display_now(text, display_sec)
 
     def shutdown(self) -> None:
         """Cancel any pending timer, drain the queue, and blank the subtitle file."""
@@ -696,19 +698,14 @@ def main():
     # Number of audio samples consumed per main-loop iteration
     chunk_size = int(config.sample_rate * config.chunk_sec)
 
-    def extra_display_sec(sample_count: int) -> float:
-        """Return bonus display seconds proportional to how long the streamer spoke."""
-        # Very long utterance (≥ 200 000 samples ≈ 12.5 s): give 6 extra seconds
-        if sample_count >= 200000:
-            return 6.0
-        # Long utterance (≥ 100 000 samples ≈ 6.25 s): give 3 extra seconds
-        elif sample_count >= 100000:
-            return 3.0
-        # Medium utterance (≥ 32 000 samples ≈ 2 s): give 2 extra second
-        elif sample_count >= 32000:
-            return 2.0
-        # Short utterance: no bonus, use only the base clear_after_sec
-        return 0.0
+    def reading_display_sec(text: str) -> float:
+        """On-screen duration scaled to the subtitle's word count at the configured reading pace.
+
+        display = words × (60 / reading_wpm), clamped to [min_display_sec, max_display_sec].
+        """
+        words = len(text.split())
+        raw = words * (60.0 / config.reading_wpm)
+        return max(config.min_display_sec, min(config.max_display_sec, raw))
 
     def process_utterance(audio_samples: np.ndarray) -> None:
         """Full pipeline for one audio block: WAV encode → transcribe → sanitise → translate → display."""
@@ -741,9 +738,9 @@ def main():
         # Sanitise the translated text and push it to OBS with the appropriate display duration.
         # Skip the glossary here — it targets French mishearings and would mangle English.
         en_text = text_processor.sanitize(en_text, apply_glossary=False)
-        extra = extra_display_sec(audio_samples.size)  # bonus seconds based on utterance length
-        subtitle_manager.write_subtitle(en_text, extra_sec=extra)
-        logger.info(f"EN: {en_text} [display +{extra:.0f}s extra]")
+        display_sec = reading_display_sec(en_text)  # reading time scaled to word count
+        subtitle_manager.write_subtitle(en_text, display_sec)
+        logger.info(f"EN: {en_text} [{len(en_text.split())}w -> display {display_sec:.1f}s]")
 
     # Hand finished utterances to a single background worker so the capture/VAD
     # loop never blocks on the transcription + translation network round-trips.
@@ -771,8 +768,7 @@ def main():
         logger.info(f"🎤 Starting live subtitle transcription")
         logger.info(f"   Device: {config.input_device_index}, Sample rate: {config.sample_rate} Hz")
         logger.info(f"   Chunk: {config.chunk_sec}s, VAD threshold: {config.vad_energy_threshold}")
-        max_extra = extra_display_sec(config.max_utterance_samples)
-        logger.info(f"   Auto-clear subtitles after {config.clear_after_sec}s (short) to {config.clear_after_sec + max_extra}s (very long utterance)")
+        logger.info(f"   Subtitle display: {config.min_display_sec}s min to {config.max_display_sec}s max ({config.reading_wpm} wpm reading pace)")
         
         if translator.deepl_auth_key:
             logger.info(f"🌍 DeepL translation enabled -> {config.deepl_target_lang}")
@@ -789,7 +785,8 @@ def main():
         ):
             utterance_audio = np.zeros((0,), dtype=np.float32)
             silence_sec = 0.0
-            
+            trailing_silence: list[np.ndarray] = []  # immediate post-speech chunk(s) held to pad soft word endings
+
             # Main processing loop — runs forever until interrupted
             while True:
                 # Inner loop: keep pulling audio chunks from the callback queue until
@@ -811,6 +808,11 @@ def main():
                 energy = float(np.sqrt(np.mean(chunk ** 2)))
                 
                 if energy > config.vad_energy_threshold:
+                    # A brief dip held some chunks aside — they were a soft word tail or an
+                    # inter-word gap, so restore them to keep the utterance continuous.
+                    if trailing_silence:
+                        utterance_audio = np.concatenate([utterance_audio, *trailing_silence])
+                        trailing_silence = []
                     # Speech detected — append chunk to the current utterance buffer
                     utterance_audio = np.concatenate([utterance_audio, chunk])
                     silence_sec = 0.0
@@ -826,14 +828,22 @@ def main():
                 else:
                     # Silence detected — accumulate silence duration
                     silence_sec += config.chunk_sec
+                    # Hold just the first chunk(s) after speech: they carry the fading tail of the
+                    # last word, which would otherwise be dropped. Deeper silence is still ignored.
+                    if utterance_audio.size > 0 and len(trailing_silence) < config.end_padding_chunks:
+                        trailing_silence.append(chunk)
                     logger.debug(f"Silence ({silence_sec:.2f}s, energy: {energy:.4f})")
                 
                 # End-of-utterance detection: enough silence has elapsed and we have buffered audio
                 if silence_sec >= config.end_utterance_silence_sec and utterance_audio.size > 0:
+                    # Re-attach the soft tail of the final word before sending, so it isn't clipped.
+                    if trailing_silence:
+                        utterance_audio = np.concatenate([utterance_audio, *trailing_silence])
                     logger.info(f"End of utterance detected ({utterance_audio.size} samples)")
                     to_transcribe = utterance_audio.copy()          # copy for processing
                     utterance_audio = np.zeros((0,), dtype=np.float32)  # reset the buffer
                     silence_sec = 0.0
+                    trailing_silence = []
                     work_q.put(to_transcribe)
     
     except KeyboardInterrupt:
